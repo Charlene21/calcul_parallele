@@ -145,10 +145,17 @@ int main(int argc, char** argv) {
 
 
             } 
+            
+            
              cout << "END BOUCLE >>>>>>>>>>>>>>>>>>>> " << endl;
-
-         
-            printf("nb tirages : %d\n",nb_tirages);
+             printf("nb tirages : %d\n",nb_tirages);
+             
+             sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages);
+             if (rank == 0){
+                sim->monte_carlo->price(prix, ic);
+                cout << "prix en 0 : " << prix << endl;
+                cout << "largeur de l'intervalle de confiance en 0 pour le prix : " << ic << endl;
+             }
 
             }
             
