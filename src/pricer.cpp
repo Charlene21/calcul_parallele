@@ -64,16 +64,17 @@ int main(int argc, char** argv) {
         Param *P = new Parser(infile);
         Simulation *sim;
         sim = new Simulation(P,rng);
+        double prix = 0;
+        double ic = 0;
 
 
         if(argv[2] == NULL){
-            double prix = 0;
-            double ic = 0;
             
             if (size > 1){
 
-                double sum = 0;
-                double sum_square = 0;
+//                double sum = 0;
+//                double sum_square = 0;
+                double variance = 0;
 //                double tmp_sum = 0;
 //                double tmp_sum_square = 0;
 
@@ -85,7 +86,9 @@ int main(int argc, char** argv) {
 //                MPI_Reduce(&sum, &tmp_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 //                MPI_Reduce(&sum_square, &tmp_sum_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
                 //printf("END_REDUCE appele par n°%d : valeur de tmp_sum : %d\n", rank, tmp_sum);
-                sim->monte_carlo->price_parallelisation(sum, sum_square, size, rank, prix, ic);
+                sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, false, 0);
+                
+                cout << "VARIANCE : " << variance << endl;
 
                 if (rank==0){
                 //sim->monte_carlo->price_master(prix, ic, tmp_sum, tmp_sum_square); 
@@ -101,19 +104,29 @@ int main(int argc, char** argv) {
             }
             
         }else{
+//            if(size<=1){
+//                cout << "Attention : il n"
+//            }
             char * prec = argv[2];
             double precision = atof(prec);
             cout << "precision : " << precision << endl;
             int nb_tirages = 1000;
-            double sigma_n, coeff;
+            double variance, sigma_n, coeff;
             
             cout << ">>NB_TIRAGES 1 : " << nb_tirages << endl;
-            sigma_n = sim->monte_carlo->estimation_variance(nb_tirages);
-            cout << "sigma_n : " << sigma_n << endl;
+            sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages);
+           
+            cout << ">>>>>>>>>>>>>>>>>>>>>sigma_n : " << variance << endl;
+            
+            sigma_n = sqrt(variance);
+            
             nb_tirages = floor(pow((2*1.96*sigma_n)/precision,2));
             cout << ">>NB_TIRAGES 2: " << nb_tirages << endl;
    
-            sigma_n = sim->monte_carlo->estimation_variance(nb_tirages);
+            sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages);
+          
+            sigma_n = sqrt(variance);
+            cout << ">>>>>sigma_n : " << sigma_n << endl;
             
             coeff = 2*1.96*sigma_n/sqrt(nb_tirages);
             cout << "coeff : " << coeff << endl;
@@ -126,8 +139,8 @@ int main(int argc, char** argv) {
                 nb_tirages = floor(pow((2*1.96*sigma_n)/precision,2));
                 printf("nb tirages boucle : %d\n",nb_tirages);
                 cout << ">>NB_TIRAGES : " << nb_tirages << endl;
-                sigma_n = sim->monte_carlo->estimation_variance(nb_tirages); 
-                
+                sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages);
+                sigma_n = sqrt(variance);
                 coeff = 2*1.96*sigma_n/sqrt(nb_tirages);
 
 

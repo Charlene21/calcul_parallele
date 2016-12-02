@@ -121,26 +121,41 @@ void MonteCarlo::price(double &prix, double &ic) {
    // printf("valeur de tmp : %d\n", tmp);
     variance = getVariance(tmp, sum_square, 0);
     prix = getPrice(sum, 0);
-    //    std::cout << "VARIANCE : " << variance << std::endl;
+    std::cout << "VARIANCE : " << variance << std::endl;
     ic = getIntervalleConfiance(variance);
 
 }
 
-void MonteCarlo::price_parallelisation(double &sum, double &sum_square, int size, int rank, double &prix, double &ic){
-    
+void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages){
+    double sum = 0;
+    double sum_square = 0;
     double tmp_sum = 0;
     double tmp_sum_square = 0;
     
     if(rank != 0){
-        this->price_slave(sum, sum_square, size, rank);
+        if(!cond)
+            this->price_slave(sum, sum_square, size, rank);
+        else
+           this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages); 
     }
     
     MPI_Reduce(&sum, &tmp_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&sum_square, &tmp_sum_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
                     
-    if (rank==0){           
-        price_master(prix, ic, tmp_sum, tmp_sum_square);
+    if (rank==0){
+        if(!cond)
+            price_master(prix, ic, tmp_sum, tmp_sum_square, variance);
+        else {
+            monte_carlo_master(prix,ic,tmp_sum,tmp_sum_square,variance,nb_tirages);
+        }
                 }
+    
+    if(cond){
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Bcast(&variance,1, MPI_DOUBLE,0, MPI_COMM_WORLD);
+    }
+
+
     
 }
 
@@ -168,10 +183,42 @@ void MonteCarlo::price_slave(double &sum, double &sum_square, int size, int rank
 
 }
 
-void MonteCarlo::price_master(double &prix, double &ic, double sum, double sum_square){
+void MonteCarlo::monte_carlo_slave(double &sum, double &sum_square, int size, int rank, int nb_tirages) {
+   // double sum = 0;
+   // double tmp = sum;
+    //double sum_square = 0;
+    double variance = 0;
+    double payoff = 0;
+
+    PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);
+
+    for (int i = 0; i < nb_tirages/(size-1); i++) {
+        pnl_mat_set_all(path, 0);
+        mod_->asset(path, opt_->T_, opt_->nbTimeSteps_, rng_);
+        payoff = opt_->payoff(path);
+        sum += payoff;
+        sum_square += pow(payoff, 2);
+    }
     
-    double tmp = sum;
-    double variance = getVariance(tmp, sum_square, 0);
+    
+    //printf("PROCESSUS N° %d, SUM : %d\n",rank,sum);
+
+    pnl_mat_free(&path);
+
+}
+
+void MonteCarlo::price_master(double &prix, double &ic, double sum, double sum_square, double &variance){
+
+    variance = getVariance(sum, sum_square, 0);
+    prix = getPrice(sum, 0);
+    //    std::cout << "VARIANCE : " << variance << std::endl;
+    ic = getIntervalleConfiance(variance);
+    
+}
+
+void MonteCarlo::monte_carlo_master(double &prix, double &ic, double sum, double sum_square, double &variance, int nb_tirages){
+
+    variance = getVarianceNbTirages(sum, sum_square, 0, nb_tirages);
     prix = getPrice(sum, 0);
     //    std::cout << "VARIANCE : " << variance << std::endl;
     ic = getIntervalleConfiance(variance);
@@ -203,35 +250,10 @@ void MonteCarlo::price(const PnlMat *past, double t, double &prix, double &ic) {
 }
 
 
+
 double MonteCarlo::estimation_variance(int nb_tirages){
-
-    double sum = 0;
-    double tmp = sum;
-    double sum_square = 0;
-    double variance = 0;
-    double payoff = 0;
-
-    PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);
-
-
-    for (int i = 0; i < nb_tirages; i++) {
-        pnl_mat_set_all(path, 0);
-        mod_->asset(path, opt_->T_, opt_->nbTimeSteps_, rng_);
-        payoff = opt_->payoff(path);
-        sum += payoff;
-        sum_square += pow(payoff, 2);
-    }
-
-    pnl_mat_free(&path);
-
-    tmp = sum;
-   // printf("valeur de tmp : %d\n", tmp);
-    variance = getVarianceNbTirages(tmp, sum_square, 0,nb_tirages);
-    cout << "sigma : " << sqrt(variance) << endl;
     
-    cout << "fin estimation_variance : " << endl;
-
-    return sqrt(variance);
+    return 0.1;
 }
 
 
