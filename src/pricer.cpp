@@ -31,8 +31,9 @@ int main(int argc, char** argv) {
     //affecte à rank le numéro du processus
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     double time1;
+    
     if (rank == 0){
-    time1 = MPI_Wtime();
+        time1 = MPI_Wtime();
     }
 
     //affecte à size le nombre de processus qui exécutent le programme
