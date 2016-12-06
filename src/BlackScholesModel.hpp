@@ -34,6 +34,9 @@ public:
      * \brief Constructeur permettant d'extraire des données d'un fichier
      * @param P  parseur d'extraction des données 
      */
+    BlackScholesModel(Param *P, int size);
+    
+    
     BlackScholesModel(Param *P);
     
     /**

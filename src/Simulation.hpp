@@ -38,7 +38,7 @@ public:
      * \brief Constructeur à partir d'un fichier et d'un PnlRng pour la parallélisation
      * @param P  parseur pour l'extraction de données dans un fichier
      */
-    Simulation(Param *P, PnlRng *rng);
+    Simulation(Param *P, PnlRng *rng, int size);
     
     /**
      * \brief Destructeur

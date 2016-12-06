@@ -18,10 +18,55 @@
 using namespace std;
 
 MonteCarlo::MonteCarlo() {
-    fdStep_ = 0.01;
+    // fdStep_ = 0.01;
     mod_ = new BlackScholesModel();
-    nbSamples_ = 500;
-    opt_ = new OptionBasket();
+    // nbSamples_ = 500;
+    // opt_ = new OptionBasket();
+
+    int bufsize, pos = 0;
+    char *buf;
+    MPI_Status status;
+    char * type;
+    int sizeType;
+    double maturity;
+    double strike;
+    int nbTimeSteps;
+    PnlVect* lambda = pnl_vect_create(mod_->size_);
+
+    int tag = 0;
+
+    MPI_Probe(0, tag, MPI_COMM_WORLD, &status);
+    MPI_Get_count(&status, MPI_PACKED, &bufsize);
+    buf = (char *) malloc(bufsize);
+    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
+    MPI_Recv(buf, bufsize, MPI_PACKED, 0, tag, MPI_COMM_WORLD, &status);
+
+    MPI_Unpack(buf, bufsize, &pos, lambda->array, lambda->size, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &maturity, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &nbTimeSteps, 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &strike, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    MPI_Unpack(buf, bufsize, &pos, &sizeType, 1, MPI_INT, MPI_COMM_WORLD);
+
+    type = (char*) malloc(sizeType);
+    MPI_Unpack(buf, bufsize, &pos, type, sizeType, MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &fdStep_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &nbSamples_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    //    cout << "maturity : " << maturity << endl;
+    //    cout << "nbTimeSteps : " << nbTimeSteps << endl;
+    //    cout << "strike : " << strike << endl;
+    //    cout << "type : " << type << endl;
+    //    cout << "lambda : " << endl;
+    //    pnl_vect_print(lambda);
+
+    if (((string) type).compare("asian") == 0) {
+        opt_ = new OptionAsiatique(maturity, nbTimeSteps, mod_->size_, strike, lambda);
+    } else if (((string) type).compare("basket") == 0) {
+        opt_ = new OptionBasket(maturity, nbTimeSteps, mod_->size_, strike, lambda);
+    } else if (((string) type).compare("performance") == 0) {
+        opt_ = new OptionPerformance(maturity, nbTimeSteps, mod_->size_, lambda);
+    }
 
     rng_ = pnl_rng_create(PNL_RNG_MERSENNE);
     pnl_rng_sseed(rng_, time(NULL));
@@ -31,6 +76,7 @@ MonteCarlo::MonteCarlo() {
 }
 
 MonteCarlo::MonteCarlo(Param *P) {
+
     mod_ = new BlackScholesModel(P);
     P->extract("fd step", fdStep_);
 
@@ -64,8 +110,10 @@ MonteCarlo::MonteCarlo(Param *P) {
     path_ = pnl_mat_create_from_zero(this->opt_->nbTimeSteps_ + 1, this->mod_->size_);
 }
 
-MonteCarlo::MonteCarlo(Param *P, PnlRng *rng) {
-    mod_ = new BlackScholesModel(P);
+MonteCarlo::MonteCarlo(Param *P, PnlRng *rng, int size) {
+
+
+    mod_ = new BlackScholesModel(P, size);
     P->extract("fd step", fdStep_);
 
     //Option
@@ -90,12 +138,51 @@ MonteCarlo::MonteCarlo(Param *P, PnlRng *rng) {
         opt_ = new OptionPerformance(maturity, nbTimeSteps, mod_->size_, lambda);
     }
 
+    char * buf;
+    int bufsize = 0;
+    int count, pos = 0;
+
+    //maturity, strike, fdstep et le nombre de double dans lambda
+    MPI_Pack_size(4 + lambda->size, MPI_DOUBLE, MPI_COMM_WORLD, &count);
+    bufsize += count;
+    //nbTimeStep, nbSamples_ la taille de lambda est déjà transmise dans la classe BlackScholes
+    MPI_Pack_size(2, MPI_INT, MPI_COMM_WORLD, &count);
+    bufsize += count;
+    MPI_Pack_size(type.size() + 1, MPI_CHAR, MPI_COMM_WORLD, &count);
+    bufsize += count;
+    //    MPI_Pack_size(1,MPI_INT,MPI_COMM_WORLD,&count);
+    //    bufsize += count;
+
+    buf = (char *) malloc(bufsize);
+
+    //on pack les valeurs de lambda
+    MPI_Pack(lambda->array, lambda->size, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    //on pack maturity
+    MPI_Pack(&maturity, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    //on pack nbTimeSteps
+    MPI_Pack(&nbTimeSteps, 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+    //on pack strike
+    MPI_Pack(&strike, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    //on pack la taille de type
+    int s = (int) type.size() + 1;
+
+    MPI_Pack(&(s), 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+    //on pack ce que contient type
+    MPI_Pack(type.c_str(), s, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(&fdStep_, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(&nbSamples_, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+
+
+    for (int i = 1; i < size; i++) {
+        MPI_Send(buf, bufsize, MPI_PACKED, i, 0, MPI_COMM_WORLD);
+    }
+
     rng_ = rng;
     shiftPlus_ = pnl_mat_new();
     shiftMoins_ = pnl_mat_new();
     path_ = pnl_mat_create_from_zero(this->opt_->nbTimeSteps_ + 1, this->mod_->size_);
-}
 
+}
 
 void MonteCarlo::price(double &prix, double &ic) {
     double sum = 0;
@@ -118,111 +205,106 @@ void MonteCarlo::price(double &prix, double &ic) {
     pnl_mat_free(&path);
 
     tmp = sum;
-   // printf("valeur de tmp : %d\n", tmp);
+    // printf("valeur de tmp : %d\n", tmp);
     variance = getVariance(tmp, sum_square, 0);
     prix = getPrice(sum, 0);
-    std::cout << "VARIANCE : " << variance << std::endl;
+    //std::cout << "VARIANCE : " << variance << std::endl;
     ic = getIntervalleConfiance(variance);
 
 }
 
-void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages){
+void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages) {
+
     double sum = 0;
     double sum_square = 0;
     double tmp_sum = 0;
     double tmp_sum_square = 0;
-    
-    if(rank != 0){
-        if(!cond)
+
+    if (rank != 0) {
+        if (!cond)
             this->price_slave(sum, sum_square, size, rank);
         else
-           this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages); 
+            this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
     }
-    
+
+
     MPI_Reduce(&sum, &tmp_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&sum_square, &tmp_sum_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-                    
-    if (rank==0){
-        if(!cond)
+
+
+    if (rank == 0) {
+        if (!cond)
             price_master(prix, ic, tmp_sum, tmp_sum_square, variance);
         else {
-            monte_carlo_master(prix,ic,tmp_sum,tmp_sum_square,variance,nb_tirages);
+            monte_carlo_master(prix, ic, tmp_sum, tmp_sum_square, variance, nb_tirages);
         }
-                }
-    
-    if(cond){
-        MPI_Barrier(MPI_COMM_WORLD);
-        MPI_Bcast(&variance,1, MPI_DOUBLE,0, MPI_COMM_WORLD);
     }
 
 
-    
+    if (cond) {
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Bcast(&variance, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+
 }
 
 void MonteCarlo::price_slave(double &sum, double &sum_square, int size, int rank) {
-   // double sum = 0;
-   // double tmp = sum;
-    //double sum_square = 0;
+
     double variance = 0;
     double payoff = 0;
 
     PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);
 
-    for (int i = 0; i < nbSamples_/(size-1); i++) {
+    // cout << "nb smpales : " << nbSamples_ << endl;
+
+    for (int i = 0; i < nbSamples_ / (size - 1); i++) {
+
         pnl_mat_set_all(path, 0);
         mod_->asset(path, opt_->T_, opt_->nbTimeSteps_, rng_);
+
         payoff = opt_->payoff(path);
         sum += payoff;
         sum_square += pow(payoff, 2);
     }
-    
-    
-    //printf("PROCESSUS N° %d, SUM : %d\n",rank,sum);
 
     pnl_mat_free(&path);
 
 }
 
 void MonteCarlo::monte_carlo_slave(double &sum, double &sum_square, int size, int rank, int nb_tirages) {
-   // double sum = 0;
-   // double tmp = sum;
-    //double sum_square = 0;
     double variance = 0;
     double payoff = 0;
 
     PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);
 
-    for (int i = 0; i < nb_tirages/(size-1); i++) {
+    for (int i = 0; i < nb_tirages / (size - 1); i++) {
         pnl_mat_set_all(path, 0);
         mod_->asset(path, opt_->T_, opt_->nbTimeSteps_, rng_);
         payoff = opt_->payoff(path);
         sum += payoff;
         sum_square += pow(payoff, 2);
     }
-    
-    
-    //printf("PROCESSUS N° %d, SUM : %d\n",rank,sum);
 
     pnl_mat_free(&path);
 
 }
 
-void MonteCarlo::price_master(double &prix, double &ic, double sum, double sum_square, double &variance){
+void MonteCarlo::price_master(double &prix, double &ic, double sum, double sum_square, double &variance) {
 
     variance = getVariance(sum, sum_square, 0);
     prix = getPrice(sum, 0);
     //    std::cout << "VARIANCE : " << variance << std::endl;
     ic = getIntervalleConfiance(variance);
-    
+
 }
 
-void MonteCarlo::monte_carlo_master(double &prix, double &ic, double sum, double sum_square, double &variance, int nb_tirages){
+void MonteCarlo::monte_carlo_master(double &prix, double &ic, double sum, double sum_square, double &variance, int nb_tirages) {
 
     variance = getVarianceNbTirages(sum, sum_square, 0, nb_tirages);
-    prix = getPrice(sum, 0);
+    prix = getPriceNbTirages(sum, 0, nb_tirages);
     //    std::cout << "VARIANCE : " << variance << std::endl;
-    ic = getIntervalleConfiance(variance);
-    
+    ic = getIntervalleConfianceNbTirages(variance, nb_tirages);
+
 }
 
 void MonteCarlo::price(const PnlMat *past, double t, double &prix, double &ic) {
@@ -248,14 +330,6 @@ void MonteCarlo::price(const PnlMat *past, double t, double &prix, double &ic) {
     // std::cout << "VARIANCE : " << variance << std::endl;
     ic = getIntervalleConfiance(variance);
 }
-
-
-
-double MonteCarlo::estimation_variance(int nb_tirages){
-    
-    return 0.1;
-}
-
 
 void MonteCarlo::delta(const PnlMat *past, double t, PnlVect *delta) {
     double h = fdStep_;
@@ -348,6 +422,15 @@ double MonteCarlo::getIntervalleConfiance(double variance) {
 double MonteCarlo::getPrice(double sum, double t) {
     sum *= exp(-mod_->r_ * (opt_->T_ - t)) / nbSamples_;
     return sum;
+}
+
+double MonteCarlo::getPriceNbTirages(double sum, double t, int nbTirages) {
+    sum *= exp(-mod_->r_ * (opt_->T_ - t)) / nbTirages;
+    return sum;
+}
+
+double MonteCarlo::getIntervalleConfianceNbTirages(double variance, int nbTirages) {
+    return 2 * 1.96 * sqrt(variance / nbTirages);
 }
 
 /*  ----------- fonctions déterministes pour les tests ----------  */

@@ -39,7 +39,7 @@ public:
      * \brief Constructeur à partir d'un fichier
      * @param P  parseur d'extraction des données dans un fichier
      */
-    MonteCarlo(Param *P, PnlRng *rng);
+    MonteCarlo(Param *P, PnlRng *rng, int size);
     
     /**
      * \brief Destructeur
@@ -60,9 +60,11 @@ public:
     void monte_carlo_master(double &prix, double &ic, double sum, double sum_square, double &variance, int nb_tirages);
     void price_master(double &prix, double &ic, double sum, double sum_square, double &variance);
     void monte_carlo_parallele(double &sum, double &sum_square, int size, int rank, int nb_tirages); 
-    
-    double estimation_variance(int nb_tirages);
+ 
     double getVarianceNbTirages(double sum, double sum_square, double t, int nb_tirages);
+    double getPriceNbTirages(double sum, double t, int nbTirages);
+    double getIntervalleConfianceNbTirages(double variance, int nbTirages);
+
 
 
     

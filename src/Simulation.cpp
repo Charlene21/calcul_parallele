@@ -8,9 +8,23 @@
 using namespace std;
 
 Simulation::Simulation() {
+    
     rng = pnl_rng_create(PNL_RNG_MERSENNE);
     pnl_rng_sseed(rng,time(NULL));
-    nbTimeStepH = 60;
+    int bufsize, pos=0;
+    char *buf;
+    MPI_Status status;
+    int tag = 0;
+
+    MPI_Probe(0, tag, MPI_COMM_WORLD, &status);   
+    MPI_Get_count(&status, MPI_PACKED, &bufsize);
+    buf = (char *) malloc(bufsize);
+    
+    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
+    MPI_Recv(buf,bufsize,MPI_PACKED,0,tag,MPI_COMM_WORLD,&status);
+    MPI_Unpack(buf,bufsize,&pos,&nbTimeStepH,1,MPI_INT,MPI_COMM_WORLD);
+    //cout << "nbTimeSteps H : " << nbTimeStepH << endl;
+    //nbTimeStepH = 60;
     monte_carlo = new MonteCarlo();
     
 }
@@ -23,10 +37,29 @@ Simulation::Simulation(Param *P) {
 
 }
 
-Simulation::Simulation(Param *P, PnlRng *rng) {
+Simulation::Simulation(Param *P, PnlRng *rng, int size) {
+    char * buf;
+    int bufsize = 0;
+    //if (rank == 0){
     this->rng = rng;
     P->extract("hedging dates number", nbTimeStepH);
-    monte_carlo = new MonteCarlo(P, rng);
+    int count, pos=0;
+    //char * buf;
+    //maturity, strike, fdstep et le nombre de double dans lambda
+    MPI_Pack_size(1,MPI_INT,MPI_COMM_WORLD,&count);
+    bufsize += count;
+    buf = (char *) malloc(bufsize);
+    
+    //on pack les valeurs de lambda
+    MPI_Pack(&nbTimeStepH,1,MPI_INT,buf,bufsize,&pos,MPI_COMM_WORLD);
+    //}
+
+    for (int i = 1; i < size; i++){
+        MPI_Send(buf,bufsize, MPI_PACKED,i,0,MPI_COMM_WORLD);
+    }
+    
+    
+    monte_carlo = new MonteCarlo(P, rng, size);
 }
 
 void Simulation::simu_couverture(PnlVect *val_pf, double &erreur_couverture, PnlVect *price) {

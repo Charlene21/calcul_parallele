@@ -2,17 +2,100 @@
 #include <math.h> 
 #include <iostream>
 #include "parser.hpp"
+#include <mpi.h>
 
 using namespace std;
 
 BlackScholesModel::BlackScholesModel() {
-    size_ = 3;
+    /*size_ = 3;
     r_ = 0.04879;
     rho_ = 0.3;
     sigma_ = pnl_vect_create_from_scalar(size_, 0.2);
     spot_ = pnl_vect_create_from_scalar(size_, 100);
-    trend = pnl_vect_create_from_scalar(size_, 0.04879);
+    trend = pnl_vect_create_from_scalar(size_, 0.04879);*/
     G = pnl_vect_new();
+
+    
+    int tag = 0;
+    MPI_Status status;
+    int bufsize, pos=0;
+    char *buf;
+
+    MPI_Probe(0, tag, MPI_COMM_WORLD, &status); 
+    MPI_Get_count(&status, MPI_PACKED, &bufsize);
+
+    buf = (char *) malloc(bufsize);
+    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
+    MPI_Recv(buf,bufsize,MPI_PACKED,0,tag,MPI_COMM_WORLD,&status);
+
+    
+    MPI_Unpack(buf,bufsize,&pos,&size_,1,MPI_INT,MPI_COMM_WORLD);
+    sigma_ = pnl_vect_create(size_);
+    spot_ = pnl_vect_create(size_);
+    trend = pnl_vect_create(size_);
+
+    MPI_Unpack(buf,bufsize,&pos,&rho_,1,MPI_DOUBLE,MPI_COMM_WORLD);
+
+    MPI_Unpack(buf,bufsize,&pos,sigma_->array,sigma_->size,MPI_DOUBLE,MPI_COMM_WORLD);
+
+    MPI_Unpack(buf,bufsize,&pos,trend->array,trend->size,MPI_DOUBLE,MPI_COMM_WORLD);
+    MPI_Unpack(buf,bufsize,&pos,spot_->array,spot_->size,MPI_DOUBLE,MPI_COMM_WORLD);
+    MPI_Unpack(buf,bufsize,&pos,&r_,1,MPI_DOUBLE,MPI_COMM_WORLD);
+    
+//    cout << "Verif spot: " << endl;
+//    pnl_vect_print(spot_);
+//    cout << "Verif sigma: " << endl;
+//    pnl_vect_print(sigma_);
+//    cout << "Verif trend: " << endl;
+//    pnl_vect_print(trend);
+    
+    //Calculation of the Cholesky matrix of the correlation matrix
+    mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
+    pnl_mat_set_diag(mat_cholesky, 1, 0);
+    pnl_mat_chol(mat_cholesky);
+    
+    clone_past_ = pnl_mat_new();
+    subBlock_ = pnl_mat_new();
+
+}
+
+BlackScholesModel::BlackScholesModel(Param *P, int size) {
+
+
+    G = pnl_vect_new();
+    P->extract("option size", size_);
+
+    P->extract("spot", spot_, size_);
+    P->extract("volatility", sigma_, size_);
+    P->extract("interest rate", r_);
+    P->extract("correlation", rho_);
+
+    P->extract("trend", trend, size_);
+
+    char * buf;
+    int bufsize = 0;
+    int count, pos=0;
+
+    //size, et les tailles de spot_, sigma_ et trend
+    MPI_Pack_size(4,MPI_INT,MPI_COMM_WORLD,&count);
+    bufsize += count;
+  
+    MPI_Pack_size(2 + sigma_->size + spot_->size + trend->size,MPI_DOUBLE,MPI_COMM_WORLD,&count);
+    bufsize += count;
+
+    
+    buf = (char*) malloc(bufsize);
+
+    MPI_Pack(&size_,1,MPI_INT,buf,bufsize,&pos,MPI_COMM_WORLD);
+    MPI_Pack(&rho_,1,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+    MPI_Pack(sigma_->array,sigma_->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+    MPI_Pack(trend->array,trend->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+    MPI_Pack(spot_->array,spot_->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+    MPI_Pack(&r_,1,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+
+    for (int i=1; i<size;i++){
+        MPI_Send(buf,bufsize,MPI_PACKED,i,0,MPI_COMM_WORLD);
+    }
 
     //Calculation of the Cholesky matrix of the correlation matrix
     mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
@@ -21,6 +104,7 @@ BlackScholesModel::BlackScholesModel() {
     
     clone_past_ = pnl_mat_new();
     subBlock_ = pnl_mat_new();
+   
 
 }
 
@@ -28,12 +112,14 @@ BlackScholesModel::BlackScholesModel(Param *P) {
 
     G = pnl_vect_new();
     P->extract("option size", size_);
+
     P->extract("spot", spot_, size_);
     P->extract("volatility", sigma_, size_);
     P->extract("interest rate", r_);
     P->extract("correlation", rho_);
-    P->extract("trend", trend, size_);
 
+    P->extract("trend", trend, size_);
+       
     //Calculation of the Cholesky matrix of the correlation matrix
     mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
     pnl_mat_set_diag(mat_cholesky, 1, 0);
@@ -41,13 +127,13 @@ BlackScholesModel::BlackScholesModel(Param *P) {
     
     clone_past_ = pnl_mat_new();
     subBlock_ = pnl_mat_new();
+
 }
 
 void BlackScholesModel::asset(PnlMat* path, double T, int nbTimeSteps, PnlRng* rng) {
 
     PnlVect *cours_date = pnl_vect_new();
     pnl_vect_clone(cours_date, spot_);
-
     PnlVect *mat_chol_row = pnl_vect_create(size_);
 
     for (int date = 0; date < nbTimeSteps + 1; date++) {
