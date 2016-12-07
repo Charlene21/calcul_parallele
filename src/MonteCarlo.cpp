@@ -213,18 +213,33 @@ void MonteCarlo::price(double &prix, double &ic) {
 
 }
 
-void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages) {
+void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages_previous,
+        int nb_tirages, double &memorized_sum, double &memorized_sum_square) {
 
     double sum = 0;
     double sum_square = 0;
     double tmp_sum = 0;
     double tmp_sum_square = 0;
-
+    
+    
     if (rank != 0) {
         if (!cond)
             this->price_slave(sum, sum_square, size, rank);
-        else
-            this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
+        else{
+            
+            if(nb_tirages - nb_tirages_previous > 0){
+                cout << "else ." << nb_tirages - nb_tirages_previous << endl;
+                this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages - nb_tirages_previous);
+            }
+                
+            else{
+                cout << "here ? " << nb_tirages << endl;
+                this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
+            }
+                
+        }
+            
+            //this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
     }
 
 
@@ -233,6 +248,15 @@ void MonteCarlo::price_parallelisation(double &variance, int size, int rank, dou
 
 
     if (rank == 0) {
+        if (nb_tirages - nb_tirages_previous > 0){
+            tmp_sum += memorized_sum;
+            tmp_sum_square += memorized_sum_square;
+        }
+        
+        memorized_sum = tmp_sum;
+        memorized_sum_square = tmp_sum_square;
+
+        
         if (!cond)
             price_master(prix, ic, tmp_sum, tmp_sum_square, variance);
         else {

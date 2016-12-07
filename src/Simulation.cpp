@@ -7,7 +7,7 @@
 
 using namespace std;
 
-Simulation::Simulation() {
+Simulation::Simulation(int rank) {
     
     rng = pnl_rng_create(PNL_RNG_MERSENNE);
     pnl_rng_sseed(rng,time(NULL));
@@ -18,10 +18,8 @@ Simulation::Simulation() {
 
     MPI_Probe(0, tag, MPI_COMM_WORLD, &status);   
     MPI_Get_count(&status, MPI_PACKED, &bufsize);
-    buf = (char *) malloc(bufsize);
-    
-    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
-    MPI_Recv(buf,bufsize,MPI_PACKED,0,tag,MPI_COMM_WORLD,&status);
+    buf = (char *) malloc(bufsize);  
+    MPI_Recv(buf,bufsize,MPI_PACKED,0,0,MPI_COMM_WORLD,&status);
     MPI_Unpack(buf,bufsize,&pos,&nbTimeStepH,1,MPI_INT,MPI_COMM_WORLD);
     //cout << "nbTimeSteps H : " << nbTimeStepH << endl;
     //nbTimeStepH = 60;
@@ -38,6 +36,7 @@ Simulation::Simulation(Param *P) {
 }
 
 Simulation::Simulation(Param *P, PnlRng *rng, int size) {
+    cout << "Simulation! size : " << size << endl;
     char * buf;
     int bufsize = 0;
     //if (rank == 0){
@@ -52,13 +51,11 @@ Simulation::Simulation(Param *P, PnlRng *rng, int size) {
     
     //on pack les valeurs de lambda
     MPI_Pack(&nbTimeStepH,1,MPI_INT,buf,bufsize,&pos,MPI_COMM_WORLD);
-    //}
-
+ 
     for (int i = 1; i < size; i++){
         MPI_Send(buf,bufsize, MPI_PACKED,i,0,MPI_COMM_WORLD);
     }
-    
-    
+  
     monte_carlo = new MonteCarlo(P, rng, size);
 }
 
