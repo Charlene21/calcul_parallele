@@ -26,7 +26,7 @@ public:
     /**
      * \brief Constructeur par defaut
      */
-    Simulation(int rank);
+    Simulation();
     
     /**
      * \brief Constructeur à partir d'un fichier

@@ -7,53 +7,40 @@
 using namespace std;
 
 BlackScholesModel::BlackScholesModel() {
-    /*size_ = 3;
-    r_ = 0.04879;
-    rho_ = 0.3;
-    sigma_ = pnl_vect_create_from_scalar(size_, 0.2);
-    spot_ = pnl_vect_create_from_scalar(size_, 100);
-    trend = pnl_vect_create_from_scalar(size_, 0.04879);*/
     G = pnl_vect_new();
 
-    
+
     int tag = 0;
     MPI_Status status;
-    int bufsize, pos=0;
+    int bufsize, pos = 0;
     char *buf;
 
-    MPI_Probe(0, tag, MPI_COMM_WORLD, &status); 
+    MPI_Probe(0, tag, MPI_COMM_WORLD, &status);
     MPI_Get_count(&status, MPI_PACKED, &bufsize);
 
     buf = (char *) malloc(bufsize);
-    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
-    MPI_Recv(buf,bufsize,MPI_PACKED,0,tag,MPI_COMM_WORLD,&status);
+   
+    MPI_Recv(buf, bufsize, MPI_PACKED, 0, tag, MPI_COMM_WORLD, &status);
 
-    
-    MPI_Unpack(buf,bufsize,&pos,&size_,1,MPI_INT,MPI_COMM_WORLD);
+
+    MPI_Unpack(buf, bufsize, &pos, &size_, 1, MPI_INT, MPI_COMM_WORLD);
     sigma_ = pnl_vect_create(size_);
     spot_ = pnl_vect_create(size_);
     trend = pnl_vect_create(size_);
 
-    MPI_Unpack(buf,bufsize,&pos,&rho_,1,MPI_DOUBLE,MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &rho_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
 
-    MPI_Unpack(buf,bufsize,&pos,sigma_->array,sigma_->size,MPI_DOUBLE,MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, sigma_->array, sigma_->size, MPI_DOUBLE, MPI_COMM_WORLD);
 
-    MPI_Unpack(buf,bufsize,&pos,trend->array,trend->size,MPI_DOUBLE,MPI_COMM_WORLD);
-    MPI_Unpack(buf,bufsize,&pos,spot_->array,spot_->size,MPI_DOUBLE,MPI_COMM_WORLD);
-    MPI_Unpack(buf,bufsize,&pos,&r_,1,MPI_DOUBLE,MPI_COMM_WORLD);
-    
-//    cout << "Verif spot: " << endl;
-//    pnl_vect_print(spot_);
-//    cout << "Verif sigma: " << endl;
-//    pnl_vect_print(sigma_);
-//    cout << "Verif trend: " << endl;
-//    pnl_vect_print(trend);
-    
+    MPI_Unpack(buf, bufsize, &pos, trend->array, trend->size, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, spot_->array, spot_->size, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Unpack(buf, bufsize, &pos, &r_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+
     //Calculation of the Cholesky matrix of the correlation matrix
     mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
     pnl_mat_set_diag(mat_cholesky, 1, 0);
     pnl_mat_chol(mat_cholesky);
-    
+
     clone_past_ = pnl_mat_new();
     subBlock_ = pnl_mat_new();
 
@@ -74,37 +61,39 @@ BlackScholesModel::BlackScholesModel(Param *P, int size) {
 
     char * buf;
     int bufsize = 0;
-    int count, pos=0;
+    int count, pos = 0;
 
     //size, et les tailles de spot_, sigma_ et trend
-    MPI_Pack_size(4,MPI_INT,MPI_COMM_WORLD,&count);
-    bufsize += count;
-  
-    MPI_Pack_size(2 + sigma_->size + spot_->size + trend->size,MPI_DOUBLE,MPI_COMM_WORLD,&count);
+    MPI_Pack_size(4, MPI_INT, MPI_COMM_WORLD, &count);
     bufsize += count;
 
-    
+    MPI_Pack_size(2 + sigma_->size + spot_->size + trend->size, MPI_DOUBLE, MPI_COMM_WORLD, &count);
+    bufsize += count;
+
+
     buf = (char*) malloc(bufsize);
 
-    MPI_Pack(&size_,1,MPI_INT,buf,bufsize,&pos,MPI_COMM_WORLD);
-    MPI_Pack(&rho_,1,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
-    MPI_Pack(sigma_->array,sigma_->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
-    MPI_Pack(trend->array,trend->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
-    MPI_Pack(spot_->array,spot_->size,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
-    MPI_Pack(&r_,1,MPI_DOUBLE,buf,bufsize,&pos,MPI_COMM_WORLD);
+    //On packe les attributs
+    MPI_Pack(&size_, 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(&rho_, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(sigma_->array, sigma_->size, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(trend->array, trend->size, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(spot_->array, spot_->size, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
+    MPI_Pack(&r_, 1, MPI_DOUBLE, buf, bufsize, &pos, MPI_COMM_WORLD);
 
-    for (int i=1; i<size;i++){
-        MPI_Send(buf,bufsize,MPI_PACKED,i,0,MPI_COMM_WORLD);
+    //On les envoie à chaque processus
+    for (int i = 1; i < size; i++) {
+        MPI_Send(buf, bufsize, MPI_PACKED, i, 0, MPI_COMM_WORLD);
     }
 
     //Calculation of the Cholesky matrix of the correlation matrix
     mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
     pnl_mat_set_diag(mat_cholesky, 1, 0);
     pnl_mat_chol(mat_cholesky);
-    
+
     clone_past_ = pnl_mat_new();
     subBlock_ = pnl_mat_new();
-   
+
 
 }
 
@@ -119,12 +108,12 @@ BlackScholesModel::BlackScholesModel(Param *P) {
     P->extract("correlation", rho_);
 
     P->extract("trend", trend, size_);
-       
+
     //Calculation of the Cholesky matrix of the correlation matrix
     mat_cholesky = pnl_mat_create_from_scalar(size_, size_, rho_);
     pnl_mat_set_diag(mat_cholesky, 1, 0);
     pnl_mat_chol(mat_cholesky);
-    
+
     clone_past_ = pnl_mat_new();
     subBlock_ = pnl_mat_new();
 
@@ -169,8 +158,6 @@ void BlackScholesModel::asset(PnlMat *path, double t, double T, int nbTimeSteps,
 
     double step = T / nbTimeSteps;
 
-
-    //PnlMat * clone_past_ = pnl_mat_new();
     pnl_mat_clone(clone_past_, past);
 
 
@@ -221,7 +208,6 @@ void BlackScholesModel::asset(PnlMat *path, double t, double T, int nbTimeSteps,
         pnl_mat_set_row(path, cours_date, date);
     }
 
-    //pnl_mat_free(&clone_past);
     pnl_vect_free(&last_row);
     pnl_vect_free(&cours_date);
     pnl_vect_free(&mat_chol_row);
@@ -245,7 +231,7 @@ void BlackScholesModel::shiftAsset(PnlMat* shift_path, const PnlMat* path, int d
     pnl_mat_mult_scalar(subBlock_, 1 + h);
 
     //Remplacement de la sous colonne modifiée
-    pnl_mat_resize(shift_path,path->m,path->n);
+    pnl_mat_resize(shift_path, path->m, path->n);
     pnl_mat_clone(shift_path, path);
     pnl_mat_set_subblock(shift_path, subBlock_, ind_t, d);
 

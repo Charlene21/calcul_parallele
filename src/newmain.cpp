@@ -12,6 +12,7 @@
  */
 
 #include <cstdlib>
+#include <iostream>
 #include <mpi.h>
 
 using namespace std;
@@ -32,12 +33,14 @@ int main(int argc, char** argv) {
     int number;
     if (world_rank == 0) {
         number = -1;
+        cout << "send " << endl;
         MPI_Send(&number, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+        cout << "send " << endl;
     } else if (world_rank == 1) {
+        cout << "rcv " << endl;
         MPI_Recv(&number, 1, MPI_INT, 0, 0, MPI_COMM_WORLD,
                  MPI_STATUS_IGNORE);
-        printf("Process 1 received number %d from process 0\n",
-               number);
+        cout << "Process 1 received number " << number << "from process 0" << endl;
     }
 
     MPI_Finalize();

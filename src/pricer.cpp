@@ -50,7 +50,6 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     double time1;
 
-    cout << "rank : " << rank << endl;
     if (rank == 0) {
         time1 = MPI_Wtime();
     }
@@ -79,10 +78,8 @@ int main(int argc, char** argv) {
             sim = new Simulation(P, rng, size);
         }
 
-        //MPI_Barrier(MPI_COMM_WORLD);
-
         if (rank != 0) {
-            sim = new Simulation(rank);
+            sim = new Simulation();
         }
 
         double prix = 0;
@@ -99,7 +96,7 @@ int main(int argc, char** argv) {
 
                 sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, false, 0, 0, memorized_sum, memorized_sum_square);
                 if (rank == 0) {
-                    //sim->monte_carlo->price_master(prix, ic, tmp_sum, tmp_sum_square); 
+                    cout << "Nombre de tirages : " << sim->monte_carlo->nbSamples_ << endl;
                     cout << "prix en 0 lance par " << rank << ": " << prix << endl;
                     cout << "largeur de l'intervalle de confiance en 0 pour le prix lance par : " << ic << endl;
 
@@ -107,6 +104,7 @@ int main(int argc, char** argv) {
             } else {
 
                 sim->monte_carlo->price(prix, ic);
+                cout << "Nombre de tirages : " << sim->monte_carlo->nbSamples_ << endl;
                 cout << "prix en 0 : " << prix << endl;
                 cout << "largeur de l'intervalle de confiance en 0 pour le prix : " << ic << endl;
             }
@@ -119,40 +117,31 @@ int main(int argc, char** argv) {
 
                 char * prec = argv[2];
                 double precision = atof(prec);
-                cout << "precision : " << precision << endl;
-                int nb_tirages = 1000;
+                uintmax_t nb_tirages = 1000;
+              
                 double variance, sigma_n, coeff;
                 double memorized_sum = 0; 
                 double memorized_sum_square = 0;
                 int nb_tirages_previous = 0;
 
-                cout << ">>NB_TIRAGES 1 : " << nb_tirages << endl;
                 sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages_previous, nb_tirages, memorized_sum, memorized_sum_square);
 
-                nb_tirages_previous = nb_tirages;
-                cout << "nb_tirages_previous (1) : " << nb_tirages_previous << endl;
+                nb_tirages_previous = nb_tirages; 
 
                 sigma_n = sqrt(variance);
 
                 nb_tirages = ceil(pow((2 * 1.96 * sigma_n) / precision, 2));
-                cout << "nb_tirages_previous (1) : " << nb_tirages_previous << endl;
-                cout << "nb_tirages (1) : " << nb_tirages<< endl;
 
                 sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages_previous, nb_tirages, memorized_sum, memorized_sum_square);
                 nb_tirages_previous = nb_tirages;
-                cout << "nb_tirages_previous (2) : " << nb_tirages_previous << endl;
+ 
                 sigma_n = sqrt(variance);
-                //cout << ">>>>>sigma_n : " << sigma_n << endl;
 
                 coeff = 2 * 1.96 * sigma_n / sqrt(nb_tirages);
-                //cout << "coeff : " << coeff << endl;
-
-                //cout << "BOUCLE >>>>>>>>>>>>>>>>>>>> " << endl;
+               
                 while (coeff > precision) {
-                  //  cout << ">>NB_TIRAGES : " << nb_tirages << endl;
-                    //sigma_n = sim->monte_carlo->estimation_variance(nb_tirages); 
+        
                     nb_tirages = ceil(pow((2 * 1.96 * sigma_n) / precision, 2));
-                    //cout << ">>NB_TIRAGES : " << nb_tirages << endl;
                     sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages_previous, nb_tirages, memorized_sum, memorized_sum_square);
                     nb_tirages_previous = nb_tirages;
                     sigma_n = sqrt(variance);
@@ -160,13 +149,10 @@ int main(int argc, char** argv) {
 
 
                 }
-
-
-               // cout << "END BOUCLE >>>>>>>>>>>>>>>>>>>> " << endl;
-                printf("nb tirages : %d\n", nb_tirages);
-
-              //  sim->monte_carlo->price_parallelisation(variance, size, rank, prix, ic, true, nb_tirages);
+                
+                
                 if (rank == 0) {
+                    printf("nb tirages : %d\n", nb_tirages);
                     cout << "prix en 0 : " << prix << endl;
                     cout << "largeur de l'intervalle de confiance en 0 pour le prix : " << ic << endl;
                 }

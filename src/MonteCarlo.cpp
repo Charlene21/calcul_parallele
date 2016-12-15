@@ -18,10 +18,7 @@
 using namespace std;
 
 MonteCarlo::MonteCarlo() {
-    // fdStep_ = 0.01;
     mod_ = new BlackScholesModel();
-    // nbSamples_ = 500;
-    // opt_ = new OptionBasket();
 
     int bufsize, pos = 0;
     char *buf;
@@ -38,7 +35,7 @@ MonteCarlo::MonteCarlo() {
     MPI_Probe(0, tag, MPI_COMM_WORLD, &status);
     MPI_Get_count(&status, MPI_PACKED, &bufsize);
     buf = (char *) malloc(bufsize);
-    //MPI_Bcast(buf, bufsize, MPI_PACKED, 0, MPI_COMM_WORLD);
+
     MPI_Recv(buf, bufsize, MPI_PACKED, 0, tag, MPI_COMM_WORLD, &status);
 
     MPI_Unpack(buf, bufsize, &pos, lambda->array, lambda->size, MPI_DOUBLE, MPI_COMM_WORLD);
@@ -52,13 +49,6 @@ MonteCarlo::MonteCarlo() {
     MPI_Unpack(buf, bufsize, &pos, type, sizeType, MPI_CHAR, MPI_COMM_WORLD);
     MPI_Unpack(buf, bufsize, &pos, &fdStep_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Unpack(buf, bufsize, &pos, &nbSamples_, 1, MPI_DOUBLE, MPI_COMM_WORLD);
-
-    //    cout << "maturity : " << maturity << endl;
-    //    cout << "nbTimeSteps : " << nbTimeSteps << endl;
-    //    cout << "strike : " << strike << endl;
-    //    cout << "type : " << type << endl;
-    //    cout << "lambda : " << endl;
-    //    pnl_vect_print(lambda);
 
     if (((string) type).compare("asian") == 0) {
         opt_ = new OptionAsiatique(maturity, nbTimeSteps, mod_->size_, strike, lambda);
@@ -142,7 +132,7 @@ MonteCarlo::MonteCarlo(Param *P, PnlRng *rng, int size) {
     int bufsize = 0;
     int count, pos = 0;
 
-    //maturity, strike, fdstep et le nombre de double dans lambda
+    //maturity, strike, fdstep et le nombre de doubles dans lambda
     MPI_Pack_size(4 + lambda->size, MPI_DOUBLE, MPI_COMM_WORLD, &count);
     bufsize += count;
     //nbTimeStep, nbSamples_ la taille de lambda est déjà transmise dans la classe BlackScholes
@@ -150,8 +140,6 @@ MonteCarlo::MonteCarlo(Param *P, PnlRng *rng, int size) {
     bufsize += count;
     MPI_Pack_size(type.size() + 1, MPI_CHAR, MPI_COMM_WORLD, &count);
     bufsize += count;
-    //    MPI_Pack_size(1,MPI_INT,MPI_COMM_WORLD,&count);
-    //    bufsize += count;
 
     buf = (char *) malloc(bufsize);
 
@@ -205,7 +193,6 @@ void MonteCarlo::price(double &prix, double &ic) {
     pnl_mat_free(&path);
 
     tmp = sum;
-    // printf("valeur de tmp : %d\n", tmp);
     variance = getVariance(tmp, sum_square, 0);
     prix = getPrice(sum, 0);
     //std::cout << "VARIANCE : " << variance << std::endl;
@@ -213,52 +200,48 @@ void MonteCarlo::price(double &prix, double &ic) {
 
 }
 
-void MonteCarlo::price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages_previous,
+void MonteCarlo::price_parallelisation(double &variance, int size, int rank,
+        double &prix, double &ic, bool cond, int nb_tirages_previous,
         int nb_tirages, double &memorized_sum, double &memorized_sum_square) {
 
     double sum = 0;
     double sum_square = 0;
     double tmp_sum = 0;
     double tmp_sum_square = 0;
-    
-    
+
+
     if (rank != 0) {
         if (!cond)
             this->price_slave(sum, sum_square, size, rank);
-        else{
-            
-            if(nb_tirages - nb_tirages_previous > 0){
-                cout << "else ." << nb_tirages - nb_tirages_previous << endl;
-                this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages - nb_tirages_previous);
+        else {
+
+            if (nb_tirages - nb_tirages_previous > 0) {
+                this->monte_carlo_slave(sum, sum_square, size, nb_tirages - nb_tirages_previous);
+            } else {
+                this->monte_carlo_slave(sum, sum_square, size, nb_tirages);
             }
-                
-            else{
-                cout << "here ? " << nb_tirages << endl;
-                this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
-            }
-                
         }
-            
-            //this->monte_carlo_slave(sum, sum_square, size, rank, nb_tirages);
     }
 
 
+    //On agrège les résultats pour ensuite les utiliser dans le processus 0
     MPI_Reduce(&sum, &tmp_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&sum_square, &tmp_sum_square, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
 
     if (rank == 0) {
-        if (nb_tirages - nb_tirages_previous > 0){
+        if (nb_tirages - nb_tirages_previous > 0) {
             tmp_sum += memorized_sum;
             tmp_sum_square += memorized_sum_square;
         }
-        
+
         memorized_sum = tmp_sum;
         memorized_sum_square = tmp_sum_square;
 
-        
+        //si la précision n'est pas donnée
         if (!cond)
             price_master(prix, ic, tmp_sum, tmp_sum_square, variance);
+        //si elle est donnée
         else {
             monte_carlo_master(prix, ic, tmp_sum, tmp_sum_square, variance, nb_tirages);
         }
@@ -279,8 +262,6 @@ void MonteCarlo::price_slave(double &sum, double &sum_square, int size, int rank
 
     PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);
 
-    // cout << "nb smpales : " << nbSamples_ << endl;
-
     for (int i = 0; i < nbSamples_ / (size - 1); i++) {
 
         pnl_mat_set_all(path, 0);
@@ -295,8 +276,7 @@ void MonteCarlo::price_slave(double &sum, double &sum_square, int size, int rank
 
 }
 
-void MonteCarlo::monte_carlo_slave(double &sum, double &sum_square, int size, int rank, int nb_tirages) {
-    double variance = 0;
+void MonteCarlo::monte_carlo_slave(double &sum, double &sum_square, int size, int nb_tirages) {
     double payoff = 0;
 
     PnlMat *path = pnl_mat_create(opt_->nbTimeSteps_ + 1, mod_->size_);

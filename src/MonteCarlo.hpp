@@ -56,7 +56,7 @@ public:
     void price_parallelisation(double &variance, int size, int rank, double &prix, double &ic, bool cond, int nb_tirages_previous, int nb_tirages, double &memorized_sum, double &memorized_sum_square);
     
     void price_slave(double &sum, double &sum_square, int size, int rank);
-    void monte_carlo_slave(double &sum, double &sum_square, int size, int rank, int nb_tirages); 
+    void monte_carlo_slave(double &sum, double &sum_square, int size, int nb_tirages); 
     void monte_carlo_master(double &prix, double &ic, double sum, double sum_square, double &variance, int nb_tirages);
     void price_master(double &prix, double &ic, double sum, double sum_square, double &variance);
     void monte_carlo_parallele(double &sum, double &sum_square, int size, int rank, int nb_tirages); 
