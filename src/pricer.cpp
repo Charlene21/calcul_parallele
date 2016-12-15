@@ -21,23 +21,6 @@
 
 using namespace std;
 
-struct data {
-    double correlation;
-    double fdstep;
-    int hedgingDatesNumber;
-    double interestRate;
-    double maturity;
-    int optionSize;
-    string optionType;
-    PnlVect *payoffCoefficients;
-    double sampleNumber;
-    PnlVect *spot;
-    double strike;
-    int TimeStepNumber;
-    PnlVect trend;
-    PnlVect volatility;
-};
-
 /*
  * 
  */
